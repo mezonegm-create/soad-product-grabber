@@ -1,6 +1,6 @@
 import http from "node:http";
 import https from "node:https";
-import type { LookupAddress } from "node:dns";
+import type { LookupFunction } from "node:net";
 import { resolveSafeAddress, validateCandidateUrl, UnsafeUrlError } from "./ssrf.js";
 
 export { UnsafeUrlError };
@@ -65,6 +65,30 @@ export async function safeFetch(inputUrl: string, options: SafeFetchOptions = {}
   }
 }
 
+/**
+ * Builds a `net`/`http`-compatible `lookup` function that always resolves to
+ * the single, already-SSRF-validated address (DNS pinning), regardless of
+ * how Node's connection logic invokes it. Node's `dns.lookup`-compatible
+ * lookup contract has two distinct calling conventions depending on the
+ * caller's `options.all`:
+ *   - all falsy (or omitted): callback(err, address: string, family: number)
+ *   - all: true             : callback(err, addresses: LookupAddress[])
+ * `net.connect`'s Happy-Eyeballs dual-stack path (`autoSelectFamily`,
+ * default-on since Node 18/20) requests `{ all: true }`. Only handling the
+ * single-address form there makes Node read `addresses[0].address` off a
+ * bare string, yielding "Invalid IP address: undefined".
+ */
+export function createPinnedLookup(pinned: { address: string; family: number }): LookupFunction {
+  return (_hostname, options, callback) => {
+    const wantsAll = typeof options === "object" && options !== null && options.all === true;
+    if (wantsAll) {
+      callback(null, [{ address: pinned.address, family: pinned.family }]);
+    } else {
+      callback(null, pinned.address, pinned.family);
+    }
+  };
+}
+
 function performRequest(
   url: URL,
   pinned: { address: string; family: number },
@@ -73,14 +97,7 @@ function performRequest(
   return new Promise((resolve, reject) => {
     const isHttps = url.protocol === "https:";
     const transport = isHttps ? https : http;
-
-    const lookup = (
-      _hostname: string,
-      lookupOptions: unknown,
-      callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
-    ) => {
-      callback(null, pinned.address, pinned.family);
-    };
+    const lookup = createPinnedLookup(pinned);
 
     const req = transport.request(
       {
@@ -95,11 +112,7 @@ function performRequest(
           ...opts.headers,
         },
         servername: isHttps ? url.hostname : undefined,
-        lookup: lookup as unknown as (
-          hostname: string,
-          options: object,
-          cb: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void,
-        ) => void,
+        lookup,
         timeout: opts.timeoutMs,
       },
       (res) => {
