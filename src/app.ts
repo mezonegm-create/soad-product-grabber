@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import archiver from "archiver";
 import { safeFetch, UnsafeUrlError } from "./lib/safeFetch.js";
-import { extractAssets } from "./lib/extract/index.js";
+import { extractAssetsWithFallback } from "./lib/extract/pipeline.js";
+import { renderWithBrowser } from "./lib/render/browserRender.js";
 import { extensionForContentType, isImageContentType } from "./lib/contentType.js";
 import { filenameForUrl } from "./lib/filename.js";
 
@@ -39,7 +40,9 @@ export function createApp() {
       }
 
       const html = fetched.body.toString("utf-8");
-      const result = extractAssets(html, fetched.finalUrl);
+      const result = await extractAssetsWithFallback(html, fetched.finalUrl, {
+        renderDynamic: (url) => renderWithBrowser(url, { timeoutMs: 20_000 }),
+      });
       res.json(result);
     } catch (err) {
       handleFetchError(err, res);

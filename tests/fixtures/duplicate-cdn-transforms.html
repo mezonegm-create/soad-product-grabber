@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <title>Espresso Machine</title>
+</head>
+<body>
+  <header class="header">
+    <img src="https://cdn.kitchenshop.example.com/branding/logo.png" alt="KitchenShop logo" />
+  </header>
+
+  <main>
+    <div class="product-gallery">
+      <!-- Same underlying photo requested at three different sizes via a
+           CDN query-string transform -- must collapse to one result at the
+           largest size, not three separate "different" images. -->
+      <img
+        src="https://cdn.kitchenshop.example.com/products/espresso-machine.jpg?width=300"
+        srcset="
+          https://cdn.kitchenshop.example.com/products/espresso-machine.jpg?width=300 300w,
+          https://cdn.kitchenshop.example.com/products/espresso-machine.jpg?width=900 900w,
+          https://cdn.kitchenshop.example.com/products/espresso-machine.jpg?width=2000 2000w
+        "
+        alt="Espresso machine"
+      />
+      <!-- A genuinely different angle must be kept as its own result. -->
+      <img
+        src="https://cdn.kitchenshop.example.com/products/espresso-machine-back.jpg?width=2000"
+        alt="Espresso machine back panel"
+      />
+    </div>
+  </main>
+</body>
+</html>

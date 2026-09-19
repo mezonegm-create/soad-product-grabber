@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <title>عطر القمر - Heaven Moon</title>
+  <!-- Real-world bug reproduction: the theme's og:image and JSON-LD both
+       default to the BRAND LOGO instead of a real product photo when no
+       per-product image was configured -- a misconfiguration, not a
+       platform quirk, that a generic extractor must defend against. -->
+  <meta property="og:image" content="https://cdn.heaven-moon.example.com/branding/logo.jpg" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "عطر القمر",
+      "image": ["https://cdn.heaven-moon.example.com/branding/logo-social-share.jpg"]
+    }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <img src="https://cdn.heaven-moon.example.com/branding/logo.jpg" alt="Heaven Moon logo" />
+  </header>
+
+  <main>
+    <h1 class="product-title">عطر القمر</h1>
+    <!-- The real product gallery is a client-side-rendered React/Vue
+         component: the container exists in the server-rendered HTML, but
+         it is completely empty until JavaScript hydrates it and fetches
+         the product's media. A static HTML/Cheerio pass can never see
+         these images because the server literally never sent them. -->
+    <div id="product-gallery" class="product-gallery" data-product-id="8842"></div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <title>Silk Scarf</title>
+</head>
+<body>
+  <header class="header">
+    <img src="https://cdn.scarfshop.example.com/branding/logo.png" alt="ScarfShop logo" />
+  </header>
+
+  <main>
+    <div class="product-gallery">
+      <!-- A 200px thumbnail must never win when the anchor points at (or
+           the srcset offers) a much larger real source. All three URLs are
+           CDN resize variants of the same underlying asset (recognized via
+           the shared "scarf_WIDTHxHEIGHT" naming), so dedupe must collapse
+           them into a single result at the largest confirmed resolution. -->
+      <a href="https://cdn.scarfshop.example.com/products/scarf_2400x2400.jpg">
+        <img
+          src="https://cdn.scarfshop.example.com/products/scarf_200x200.jpg"
+          srcset="https://cdn.scarfshop.example.com/products/scarf_200x200.jpg 200w, https://cdn.scarfshop.example.com/products/scarf_800x800.jpg 800w"
+          alt="Silk scarf"
+        />
+      </a>
+    </div>
+  </main>
+</body>
+</html>

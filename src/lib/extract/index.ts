@@ -6,9 +6,11 @@ import { extractFromShopifyProductJson } from "./shopify.js";
 import { extractFromWooCommerce } from "./woocommerce.js";
 import { extractFromDom } from "./domImages.js";
 import { extractLogoCandidates, type LogoCandidate } from "./logo.js";
-import { isLikelyDecorativeOrTracking, isTooSmallForProductImage } from "./filters.js";
+import { isLikelyDecorativeOrTracking, isTooSmallForProductImage, isLikelyLogoArtwork } from "./filters.js";
 import { dedupeCandidates } from "../dedupe.js";
-import { dimensionHintFromUrl, guessFormatFromUrl } from "../imageUrl.js";
+import { dimensionHintFromUrl, guessFormatFromUrl, canonicalizeImageKey } from "../imageUrl.js";
+
+export const NO_PRODUCT_IMAGES_WARNING = "No product images detected";
 
 const MAX_IMAGES = 60;
 
@@ -64,7 +66,37 @@ function filterCandidates(candidates: ImageCandidate[], baseUrl: string): ImageC
     .map((c) => resolveAndNormalize(c, baseUrl))
     .filter((c): c is ImageCandidate => c !== null)
     .filter((c) => !isLikelyDecorativeOrTracking(c.url))
+    .filter((c) => !isLikelyLogoArtwork(c.url))
     .filter((c) => !isTooSmallForProductImage(c.width, c.height));
+}
+
+/**
+ * Removes any surviving "product image" that is actually the same asset as
+ * the separately-detected brand logo (exact-URL/CDN-variant match via
+ * canonicalization). `isLikelyLogoArtwork` above already rejects images
+ * whose own filename says "logo"; this catches the case where a
+ * misconfigured theme serves the identical logo file under a filename that
+ * gives no textual hint (e.g. reused for both header branding and
+ * og:image), which is exactly what one real storefront's product page
+ * (Heaven Moon) did -- its structured og:image / JSON-LD data pointed at
+ * brand artwork rather than a real product photo, and the "product image"
+ * that came back was, byte-for-byte, the same file as the logo.
+ */
+function excludeLogoDuplicate(images: ImageCandidate[], logo: ExtractedAsset | null): ImageCandidate[] {
+  if (!logo || logo.url.startsWith("data:")) return images;
+  const logoKey = canonicalizeImageKey(logo.url);
+  return images.filter((c) => canonicalizeImageKey(c.url) !== logoKey);
+}
+
+/**
+ * Whether an extraction result contains at least one image that is
+ * genuinely a product photo (i.e. survived logo/decorative/tiny
+ * filtering). Used to decide whether a rendered-DOM fallback pass is
+ * needed: static extraction that only ever turned up branding imagery is
+ * not "credible" and must not be reported as the product gallery.
+ */
+export function hasCredibleProductImages(result: Pick<ExtractResult, "images">): boolean {
+  return result.images.length > 0;
 }
 
 function pickBestLogo(candidates: LogoCandidate[], baseUrl: string): ExtractedAsset | null {
@@ -109,6 +141,12 @@ export function extractAssets(html: string, baseUrl: string): ExtractResult {
   const $ = cheerio.load(html);
   const warnings: string[] = [];
 
+  // Resolved before the image pipeline so product-image candidates can be
+  // cross-checked against it (see excludeLogoDuplicate) -- a logo is never
+  // simultaneously a product photo, however confidently a source reported it.
+  const logoCandidates = extractLogoCandidates($);
+  const logo = pickBestLogo(logoCandidates, baseUrl);
+
   const structuredRaw: ImageCandidate[] = [
     ...extractFromJsonLd($),
     ...extractFromOpenGraph($),
@@ -130,17 +168,15 @@ export function extractAssets(html: string, baseUrl: string): ExtractResult {
   // only fall back to the unscoped generic scan when it is truly empty.
   const chosen = structuredAndGallery.length > 0 ? structuredAndGallery : generic;
 
-  const deduped = dedupeCandidates(chosen)
+  const deduped = excludeLogoDuplicate(dedupeCandidates(chosen), logo)
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_IMAGES);
 
   const images = deduped.map(toExtractedAsset);
   if (images.length === 0) {
-    warnings.push("No product images were found on this page.");
+    warnings.push(NO_PRODUCT_IMAGES_WARNING);
   }
 
-  const logoCandidates = extractLogoCandidates($);
-  const logo = pickBestLogo(logoCandidates, baseUrl);
   if (!logo) {
     warnings.push("No brand logo was found on this page.");
   }

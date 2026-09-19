@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { isLikelyDecorativeOrTracking, isTooSmallForProductImage, looksLikeLogoHint } from "../src/lib/extract/filters.js";
+import {
+  isLikelyDecorativeOrTracking,
+  isTooSmallForProductImage,
+  looksLikeLogoHint,
+  isLikelyLogoArtwork,
+} from "../src/lib/extract/filters.js";
 
 describe("isLikelyDecorativeOrTracking", () => {
   it("flags known UI/tracking asset filenames", () => {
@@ -43,5 +48,18 @@ describe("looksLikeLogoHint", () => {
 
   it("does not match unrelated text", () => {
     expect(looksLikeLogoHint("product-gallery-image")).toBe(false);
+  });
+});
+
+describe("isLikelyLogoArtwork", () => {
+  it("flags a product-image candidate URL that names itself as a logo", () => {
+    // Real-world regression: a Heaven Moon perfume product page's og:image
+    // and JSON-LD both pointed at brand artwork instead of a real photo.
+    expect(isLikelyLogoArtwork("https://cdn.heaven-moon.example.com/branding/logo.jpg")).toBe(true);
+    expect(isLikelyLogoArtwork("https://cdn.example.com/branding/logo-social-share.jpg")).toBe(true);
+  });
+
+  it("does not flag a genuine product photo", () => {
+    expect(isLikelyLogoArtwork("https://cdn.example.com/products/perfume-bottle-front.jpg")).toBe(false);
   });
 });

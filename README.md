@@ -64,39 +64,50 @@ src/
     types.ts        shared types
     extract/
       index.ts       extraction pipeline orchestrator
+      pipeline.ts     static-first / render-fallback orchestration
       jsonld.ts       schema.org Product/Organization JSON-LD
       opengraph.ts    og:image / og:logo fallback
       shopify.ts      Shopify embedded product JSON (ProductJson-*)
       woocommerce.ts  WooCommerce gallery markup (data-large_image)
       domImages.ts    generic <img>/<picture>/srcset/lazy-load/background-image scanning
       logo.ts         brand logo detection (structured data + DOM heuristics)
-      filters.ts      decorative/tracking/icon filtering heuristics
+      filters.ts      decorative/tracking/icon/logo-artwork filtering heuristics
+    render/
+      browserRender.ts  SSRF-safe headless-Chromium rendering fallback
 tests/               vitest unit tests + HTML fixtures
 ```
 
 ### Request flow
 
 `POST /api/extract { url }` → `safeFetch` (SSRF-checked) fetches the HTML →
-`extractAssets(html, finalUrl)` runs every extraction method and returns
-`{ images[], logo, warnings[] }` → the frontend renders the gallery.
+`extractAssetsWithFallback` runs the static pipeline (`extractAssets`)
+first; if it finds zero credible product images, it renders the page with
+headless Chromium (`renderWithBrowser`) and re-runs the same static
+pipeline against the rendered DOM → returns `{ images[], logo, warnings[] }`
+→ the frontend renders the gallery.
 
 Downloads never expose an open proxy: `GET /api/download?url=...` and
 `POST /api/download-all` re-validate every URL through the same SSRF checks
 before fetching, and only forward responses whose `Content-Type` is
 `image/*`.
 
-### Why no headless browser by default
+### Static extraction first, headless rendering only as a fallback
 
-The brief asks for browser automation (e.g. Playwright) only when static
-extraction is insufficient for JavaScript-rendered galleries. This first
-version implements the complete static pipeline (JSON-LD, OpenGraph,
-platform-specific embedded JSON, and full DOM/srcset/lazy-load scanning),
-which covers the overwhelming majority of product pages, including
-JS-rendered ones that still embed the product JSON server-side (Shopify,
-most WooCommerce/WordPress themes). The extraction engine is structured
-(`lib/extract/*`) so a Playwright-based renderer can be added later as one
-more extractor, invoked only as a fallback when the static pipeline finds
-too few images, without launching a browser on every request.
+A browser is not launched on every request. `extractAssets` runs the
+complete static pipeline (JSON-LD, OpenGraph, platform-specific embedded
+JSON, and full DOM/srcset/lazy-load scanning), which covers the
+overwhelming majority of product pages, including JS-rendered ones that
+still embed the product JSON server-side (Shopify, most
+WooCommerce/WordPress themes). Only when that pipeline turns up **zero**
+credible product images — for example a product gallery populated entirely
+by client-side JavaScript after the initial HTML load, so the server-sent
+HTML never contains it at all — does `extractAssetsWithFallback`
+(`lib/extract/pipeline.ts`) render the page with headless Chromium
+(`lib/render/browserRender.ts`), scroll it to trigger lazy-loading, and
+re-run the exact same static pipeline against the resulting DOM. The
+render's SSRF protections mirror `safeFetch`'s: the navigation is
+DNS-pinned via Chromium's `--host-resolver-rules`, and every subresource
+request the page makes is independently validated before being allowed.
 
 ## Supported extraction methods
 
@@ -135,6 +146,17 @@ too few images, without launching a browser on every request.
   `.logo`/`.site-logo`/`.brand-logo` wrapper classes anywhere on the page.
   Payment/badge/award icons that also happen to contain "logo" in their
   class name are explicitly excluded.
+- **Logo/product separation** — a candidate product image is rejected if
+  its own filename identifies it as brand artwork (`isLikelyLogoArtwork`),
+  or if it is the same asset (by canonical, resize-suffix-normalized URL)
+  as the separately-detected logo — guarding against themes whose
+  `og:image`/JSON-LD default to the brand logo instead of a real product
+  photo. If no image survives every filter, the API reports
+  `"No product images detected"` rather than substituting the logo.
+- **Rendered-DOM fallback** — when the checks above leave zero product
+  images, `renderWithBrowser` loads the page in headless Chromium, waits
+  for a gallery-like container, scrolls to trigger lazy loading, and hands
+  the fully hydrated HTML back through the same static pipeline.
 
 ## Security: SSRF protections
 
@@ -165,12 +187,19 @@ Because the app fetches arbitrary user-supplied URLs, `src/lib/ssrf.ts` and
 
 ## Limitations
 
-- **Static extraction only.** Product galleries that only render images via
-  client-side JavaScript with no server-embedded data (no JSON-LD, no
-  embedded product JSON, no server-rendered `<img>` tags) will not be
-  found. A Playwright-based fallback extractor is a natural next step (see
-  Architecture) but is not implemented in this first version, to avoid
-  launching a browser on every request.
+- **Rendered fallback is best-effort.** `renderWithBrowser` has bounded
+  timeouts (navigation, gallery-selector wait, scroll count, network-idle
+  wait) and only scrolls the main page — a gallery behind a click-to-open
+  lightbox/modal, or one that needs interaction beyond scrolling to load,
+  may still not be found. A render failure (timeout, blocked navigation)
+  falls back to the static result rather than failing the request.
+- **Requires a Chromium binary to actually use the fallback.** The
+  `playwright` npm package is a dependency, but its browser binary is a
+  separate download (`npx playwright install chromium`) not fetched
+  automatically in every environment. Without it, the fallback simply fails
+  silently and the static result (including its "No product images
+  detected" warning, if applicable) is returned — static extraction and
+  every other feature work independently of this.
 - **No verification fetch of every candidate.** The tool does not issue a
   `HEAD` request to confirm every discovered URL actually resolves before
   showing it in the gallery; a broken/expired CDN URL on the source page
@@ -183,13 +212,19 @@ Because the app fetches arbitrary user-supplied URLs, `src/lib/ssrf.ts` and
 - **Real-site testing.** This implementation environment's outbound network
   access is restricted to package registries and does not permit fetching
   arbitrary external websites, so end-to-end extraction could not be
-  exercised against live product pages during development. It was instead
-  verified against realistic Shopify-style, WooCommerce-style, JSON-LD-only,
-  and OpenGraph-only HTML fixtures (see `tests/fixtures/`) that reproduce
-  the exact markup patterns each extractor targets. **Before relying on
-  this in production, run it against a handful of real product pages from
-  each platform you care about and adjust the heuristics in
-  `src/lib/extract/` as needed.**
+  exercised against live product pages during development — including the
+  real Heaven Moon and Salla URLs used to diagnose and regression-test the
+  logo/product-confusion and JS-hydrated-gallery bugs this pipeline defends
+  against. It was instead verified against realistic Shopify-style,
+  WooCommerce-style, JSON-LD-only, OpenGraph-only, and Heaven-Moon-style
+  (structured data pointing at brand artwork + empty client-hydrated
+  gallery) HTML fixtures (see `tests/fixtures/`) that reproduce the exact
+  markup patterns each extractor targets, plus a real-headless-Chromium
+  test of the render fallback's lazy-load/SSRF behavior against a local
+  server (`tests/browserRender.test.ts`). **Before relying on this in
+  production, run it against a handful of real product pages from each
+  platform you care about, including the ones that motivated this fix, and
+  adjust the heuristics in `src/lib/extract/` as needed.**
 - **No queueing/rate limiting.** Suitable for personal/internal use as
   shipped; a public deployment should add per-IP rate limiting in front of
   `/api/extract` and `/api/download-all`.
@@ -203,6 +238,12 @@ Because the app fetches arbitrary user-supplied URLs, `src/lib/ssrf.ts` and
 - Outbound HTTPS/HTTP access to arbitrary public hosts is required (that is
   the app's entire purpose), while the SSRF protections above prevent it
   from being used to reach internal/private network targets.
+- To use the rendered-DOM fallback (`renderWithBrowser`), run
+  `npx playwright install chromium` once after `npm install` so a Chromium
+  binary is available; without it the fallback is skipped and static
+  extraction's result is used as-is. Set `SOAD_CHROMIUM_EXECUTABLE` to point
+  at a specific browser binary instead (e.g. a pre-installed one in a
+  container image) if you don't want Playwright managing its own.
 - Run `npm run build && npm start` behind a reverse proxy (nginx, Caddy,
   the platform's own TLS termination, etc.) in production; the app itself
   serves plain HTTP.
