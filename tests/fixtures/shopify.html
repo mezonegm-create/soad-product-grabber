@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <title>Classic Canvas Sneaker – Acme Footwear</title>
+  <meta property="og:image" content="https://cdn.shopify.com/s/files/1/0001/product-fallback_800x800.jpg" />
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="site-logo">
+      <img src="https://cdn.acmefootwear.com/assets/acme-logo.svg" alt="Acme Footwear logo" width="160" height="40" />
+    </a>
+    <nav class="navbar">
+      <img src="/icons/cart-icon.png" alt="cart icon" width="24" height="24" />
+    </nav>
+  </header>
+
+  <main>
+    <section class="product-gallery">
+      <img
+        class="product-gallery__image"
+        src="https://cdn.shopify.com/s/files/1/0001/products/sneaker-front_300x300.jpg"
+        srcset="
+          https://cdn.shopify.com/s/files/1/0001/products/sneaker-front_300x300.jpg 300w,
+          https://cdn.shopify.com/s/files/1/0001/products/sneaker-front_800x800.jpg 800w,
+          https://cdn.shopify.com/s/files/1/0001/products/sneaker-front_2000x2000.jpg 2000w
+        "
+        alt="Sneaker front view"
+      />
+      <img
+        class="product-gallery__image"
+        data-src="https://cdn.shopify.com/s/files/1/0001/products/sneaker-side_2000x2000.jpg"
+        alt="Sneaker side view"
+      />
+    </section>
+
+    <script type="application/json" id="ProductJson-product-template">
+      {
+        "id": 123,
+        "title": "Classic Canvas Sneaker",
+        "images": [
+          "//cdn.shopify.com/s/files/1/0001/products/sneaker-front_2000x2000.jpg",
+          "//cdn.shopify.com/s/files/1/0001/products/sneaker-back_2000x2000.jpg"
+        ]
+      }
+    </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Classic Canvas Sneaker",
+        "image": [
+          "https://cdn.shopify.com/s/files/1/0001/products/sneaker-front_2000x2000.jpg"
+        ]
+      }
+    </script>
+
+    <section class="recommended-products">
+      <img src="https://cdn.shopify.com/s/files/1/0001/products/other-product_300x300.jpg" alt="Other product" />
+    </section>
+  </main>
+</body>
+</html>

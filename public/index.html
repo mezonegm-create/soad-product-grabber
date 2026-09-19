@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOAD Product Grabber</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="page">
+    <h1>SOAD Product Grabber</h1>
+    <p class="subtitle">Paste a product page URL. Get the original product images and brand logo.</p>
+
+    <form id="grab-form" class="grab-form">
+      <input
+        id="url-input"
+        type="url"
+        name="url"
+        placeholder="https://example.com/products/your-product"
+        autocomplete="off"
+        required
+      />
+      <button type="submit" id="grab-button">Grab Assets</button>
+    </form>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <section id="results" class="results hidden">
+      <div class="results-header">
+        <h2>Product Images <span id="image-count" class="count"></span></h2>
+        <button id="download-all" type="button" class="secondary">Download All (.zip)</button>
+      </div>
+      <div id="image-grid" class="grid"></div>
+
+      <div id="logo-section" class="logo-section hidden">
+        <h2>Logo</h2>
+        <div id="logo-card" class="grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
