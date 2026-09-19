@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { ImageCandidate, ExtractedAsset, ExtractResult } from "../types.js";
+import type { CandidateTrace, StaticPassDiagnostics } from "./diagnostics.js";
 import { extractFromJsonLd } from "./jsonld.js";
 import { extractFromOpenGraph } from "./opengraph.js";
 import { extractFromShopifyProductJson } from "./shopify.js";
@@ -61,31 +62,66 @@ function toExtractedAsset(candidate: ImageCandidate): ExtractedAsset {
   };
 }
 
-function filterCandidates(candidates: ImageCandidate[], baseUrl: string): ImageCandidate[] {
-  return candidates
-    .map((c) => resolveAndNormalize(c, baseUrl))
-    .filter((c): c is ImageCandidate => c !== null)
-    .filter((c) => !isLikelyDecorativeOrTracking(c.url))
-    .filter((c) => !isLikelyLogoArtwork(c.url))
-    .filter((c) => !isTooSmallForProductImage(c.width, c.height));
+function stageFor(candidate: ImageCandidate): CandidateTrace["stage"] {
+  if (candidate.confidence === "structured") return "structured";
+  if (candidate.confidence === "gallery") return "dom-gallery";
+  if (candidate.source === "network-response") return "network-response";
+  return "dom-generic";
+}
+
+interface Evaluated {
+  trace: CandidateTrace;
+  resolved: ImageCandidate | null;
 }
 
 /**
- * Removes any surviving "product image" that is actually the same asset as
- * the separately-detected brand logo (exact-URL/CDN-variant match via
- * canonicalization). `isLikelyLogoArtwork` above already rejects images
- * whose own filename says "logo"; this catches the case where a
- * misconfigured theme serves the identical logo file under a filename that
- * gives no textual hint (e.g. reused for both header branding and
- * og:image), which is exactly what one real storefront's product page
- * (Heaven Moon) did -- its structured og:image / JSON-LD data pointed at
- * brand artwork rather than a real product photo, and the "product image"
- * that came back was, byte-for-byte, the same file as the logo.
+ * Resolves one raw candidate and runs the same filters the production
+ * pipeline applies, recording a full trace regardless of outcome. This is
+ * the single place accept/reject logic lives -- both the production result
+ * and the diagnostics view are built from these traces, so there is no way
+ * for the two to silently disagree.
  */
-function excludeLogoDuplicate(images: ImageCandidate[], logo: ExtractedAsset | null): ImageCandidate[] {
-  if (!logo || logo.url.startsWith("data:")) return images;
-  const logoKey = canonicalizeImageKey(logo.url);
-  return images.filter((c) => canonicalizeImageKey(c.url) !== logoKey);
+function evaluateCandidate(candidate: ImageCandidate, baseUrl: string): Evaluated {
+  const stage = stageFor(candidate);
+  const resolved = resolveAndNormalize(candidate, baseUrl);
+
+  if (!resolved) {
+    return {
+      resolved: null,
+      trace: {
+        url: candidate.url,
+        source: candidate.source,
+        confidence: candidate.confidence,
+        score: candidate.score,
+        width: candidate.width,
+        height: candidate.height,
+        stage,
+        accepted: false,
+        rejectionReasons: ["unresolvable-or-non-http-url"],
+      },
+    };
+  }
+
+  const reasons: string[] = [];
+  if (isLikelyDecorativeOrTracking(resolved.url)) reasons.push("decorative-or-tracking-pattern");
+  if (isLikelyLogoArtwork(resolved.url)) reasons.push("logo-artwork-filename");
+  if (isTooSmallForProductImage(resolved.width, resolved.height)) {
+    reasons.push(`too-small(${resolved.width ?? "?"}x${resolved.height ?? "?"})`);
+  }
+
+  const trace: CandidateTrace = {
+    url: resolved.url,
+    source: resolved.source,
+    confidence: resolved.confidence,
+    score: resolved.score,
+    width: resolved.width,
+    height: resolved.height,
+    stage,
+    accepted: reasons.length === 0,
+    rejectionReasons: reasons,
+  };
+
+  return { resolved: reasons.length === 0 ? resolved : null, trace };
 }
 
 /**
@@ -120,8 +156,15 @@ function pickBestLogo(candidates: LogoCandidate[], baseUrl: string): ExtractedAs
   return toExtractedAsset(best);
 }
 
+interface PipelineOutput {
+  result: ExtractResult;
+  diagnostics: StaticPassDiagnostics;
+}
+
 /**
- * Runs the full static extraction pipeline against already-fetched HTML.
+ * The single extraction pipeline implementation. `extractAssets` and
+ * `extractAssetsWithDiagnostics` are both thin wrappers around this, so the
+ * production result and its diagnostic trace can never drift apart.
  *
  * Product-image sources are combined with a confidence-tiered policy, not a
  * flat merge: structured, explicitly product-scoped data (JSON-LD, Shopify
@@ -136,8 +179,13 @@ function pickBestLogo(candidates: LogoCandidate[], baseUrl: string): ExtractedAs
  * The unscoped generic scan is only used as a last-resort fallback, for
  * pages that expose no structured product data and no recognizable
  * gallery container at all.
+ *
+ * `extraCandidates` lets a caller (the rendered-DOM fallback pipeline) feed
+ * in additional candidates discovered outside the HTML itself -- e.g.
+ * images observed as network responses during a headless-browser render --
+ * which are evaluated through the exact same filters as everything else.
  */
-export function extractAssets(html: string, baseUrl: string): ExtractResult {
+function runPipeline(html: string, baseUrl: string, extraCandidates: ImageCandidate[] = []): PipelineOutput {
   const $ = cheerio.load(html);
   const warnings: string[] = [];
 
@@ -154,23 +202,58 @@ export function extractAssets(html: string, baseUrl: string): ExtractResult {
     ...extractFromWooCommerce($),
   ];
   const domRaw = extractFromDom($);
+  const allRaw = [...structuredRaw, ...domRaw, ...extraCandidates];
 
-  const structuredAndGallery = filterCandidates(
-    [...structuredRaw, ...domRaw.filter((c) => c.confidence !== "generic")],
-    baseUrl,
-  );
-  const generic = filterCandidates(
-    domRaw.filter((c) => c.confidence === "generic"),
-    baseUrl,
-  );
+  const evaluated = allRaw.map((c) => evaluateCandidate(c, baseUrl));
+  const traces = evaluated.map((e) => e.trace);
+
+  const structuredAndGallery: ImageCandidate[] = [];
+  const generic: ImageCandidate[] = [];
+  for (const e of evaluated) {
+    if (!e.resolved) continue;
+    if (e.trace.stage === "structured" || e.trace.stage === "dom-gallery") {
+      structuredAndGallery.push(e.resolved);
+    } else {
+      generic.push(e.resolved);
+    }
+  }
 
   // Prefer the high-confidence set whenever it produced anything at all;
   // only fall back to the unscoped generic scan when it is truly empty.
+  const tierUsed: StaticPassDiagnostics["tierUsed"] =
+    structuredAndGallery.length > 0 ? "structured+gallery" : generic.length > 0 ? "generic" : "none";
   const chosen = structuredAndGallery.length > 0 ? structuredAndGallery : generic;
 
-  const deduped = excludeLogoDuplicate(dedupeCandidates(chosen), logo)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, MAX_IMAGES);
+  const winners = dedupeCandidates(chosen);
+  const winnerUrls = new Set(winners.map((w) => w.url));
+
+  // Anything that was accepted by every filter but lost to a
+  // higher-resolution duplicate of the same underlying asset is not a
+  // rejection in the usual sense, but it explains why that exact URL isn't
+  // in the final list -- record it as such rather than leaving it looking
+  // like an unexplained silent drop.
+  for (const trace of traces) {
+    if (trace.accepted && chosen.some((c) => c.url === trace.url) && !winnerUrls.has(trace.url)) {
+      const winner = winners.find((w) => canonicalizeImageKey(w.url) === canonicalizeImageKey(trace.url));
+      trace.accepted = false;
+      trace.rejectionReasons.push(
+        winner ? `duplicate-lower-resolution-than:${winner.url}` : "duplicate-lower-resolution-variant",
+      );
+    }
+  }
+
+  const logoKey = logo && !logo.url.startsWith("data:") ? canonicalizeImageKey(logo.url) : null;
+  const finalWinners = logoKey ? winners.filter((w) => canonicalizeImageKey(w.url) !== logoKey) : winners;
+  if (logoKey) {
+    for (const trace of traces) {
+      if (trace.accepted && winnerUrls.has(trace.url) && canonicalizeImageKey(trace.url) === logoKey) {
+        trace.accepted = false;
+        trace.rejectionReasons.push("same-asset-as-detected-logo");
+      }
+    }
+  }
+
+  const deduped = finalWinners.sort((a, b) => b.score - a.score).slice(0, MAX_IMAGES);
 
   const images = deduped.map(toExtractedAsset);
   if (images.length === 0) {
@@ -181,10 +264,48 @@ export function extractAssets(html: string, baseUrl: string): ExtractResult {
     warnings.push("No brand logo was found on this page.");
   }
 
-  return {
+  const result: ExtractResult = {
     sourceUrl: baseUrl,
     images,
     logo,
     warnings,
   };
+
+  const diagnostics: StaticPassDiagnostics = {
+    finalUrl: baseUrl,
+    htmlLength: html.length,
+    logoUrl: logo?.url ?? null,
+    logoCandidateCount: logoCandidates.length,
+    candidates: traces,
+    tierUsed,
+    finalImageUrls: images.map((i) => i.url),
+    hasCredibleProductImages: hasCredibleProductImages(result),
+  };
+
+  return { result, diagnostics };
+}
+
+/**
+ * Runs the full static extraction pipeline against already-fetched HTML and
+ * returns only the result, for callers that don't need the diagnostic
+ * trace (this is what every extractor test in this repo uses).
+ */
+export function extractAssets(html: string, baseUrl: string, extraCandidates: ImageCandidate[] = []): ExtractResult {
+  return runPipeline(html, baseUrl, extraCandidates).result;
+}
+
+/**
+ * Same extraction as `extractAssets`, but also returns a full per-candidate
+ * diagnostic trace: every source's raw candidates, whether each survived
+ * filtering and exactly why not if it didn't, which confidence tier was
+ * used, and the final credibility verdict. Used by the debug-mode request
+ * path (`DEBUG_EXTRACTION=true`) to explain a specific extraction failure
+ * without guessing.
+ */
+export function extractAssetsWithDiagnostics(
+  html: string,
+  baseUrl: string,
+  extraCandidates: ImageCandidate[] = [],
+): PipelineOutput {
+  return runPipeline(html, baseUrl, extraCandidates);
 }

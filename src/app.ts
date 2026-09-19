@@ -1,18 +1,35 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
+import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import archiver from "archiver";
 import { safeFetch, UnsafeUrlError } from "./lib/safeFetch.js";
-import { extractAssetsWithFallback } from "./lib/extract/pipeline.js";
+import { extractAssetsWithFallback, extractAssetsWithFallbackDiagnostics } from "./lib/extract/pipeline.js";
 import { renderWithBrowser } from "./lib/render/browserRender.js";
 import { extensionForContentType, isImageContentType } from "./lib/contentType.js";
 import { filenameForUrl } from "./lib/filename.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
+const DEBUG_DIR = path.join(__dirname, "..", "debug");
 
 const MAX_ASSET_BYTES = 25 * 1024 * 1024; // 25MB per image
 const MAX_BATCH_ITEMS = 80;
+
+/**
+ * When true (`DEBUG_EXTRACTION=true npm run dev`/`start`), every
+ * /api/extract request additionally saves the static HTML, the rendered
+ * HTML (if the browser fallback ran), a full-page screenshot of the render
+ * (if it ran), and a structured diagnostics JSON (every candidate
+ * considered, why each was accepted/rejected, whether/why the render
+ * fallback triggered) under `debug/`. This exists specifically so a
+ * real-world extraction failure that cannot be reproduced in this
+ * development environment can be diagnosed from evidence gathered wherever
+ * it *can* be reproduced, instead of guessed at. Off by default: it must
+ * never write to disk (or slow down requests with a screenshot) in normal
+ * operation.
+ */
+const DEBUG_EXTRACTION = process.env.DEBUG_EXTRACTION === "true";
 
 export function createApp() {
   const app = express();
@@ -40,6 +57,29 @@ export function createApp() {
       }
 
       const html = fetched.body.toString("utf-8");
+
+      if (DEBUG_EXTRACTION) {
+        const debugId = debugRequestId(fetched.finalUrl);
+        const screenshotPath = path.join(DEBUG_DIR, `${debugId}-screenshot.png`);
+        const { result, diagnostics, renderedHtml } = await extractAssetsWithFallbackDiagnostics(
+          url,
+          html,
+          fetched.finalUrl,
+          { renderDynamic: (u) => renderWithBrowser(u, { timeoutMs: 20_000, screenshotPath }) },
+        );
+        await writeDebugArtifacts(debugId, { staticHtml: html, renderedHtml, diagnostics });
+        console.log(
+          `[DEBUG_EXTRACTION] ${url} -> tier=${diagnostics.staticPass.tierUsed} ` +
+            `staticCredible=${diagnostics.staticPass.hasCredibleProductImages} ` +
+            `renderTriggered=${diagnostics.renderPass.triggered} ` +
+            `renderError=${diagnostics.renderPass.error ?? "none"} ` +
+            `finalImages=${diagnostics.finalImageUrls.length} logo=${diagnostics.finalLogoUrl ?? "none"} ` +
+            `-- full diagnostics written to debug/${debugId}-diagnostics.json`,
+        );
+        res.json(result);
+        return;
+      }
+
       const result = await extractAssetsWithFallback(html, fetched.finalUrl, {
         renderDynamic: (url) => renderWithBrowser(url, { timeoutMs: 20_000 }),
       });
@@ -134,6 +174,37 @@ export function createApp() {
   });
 
   return app;
+}
+
+function debugRequestId(finalUrl: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  let host = "unknown-host";
+  try {
+    host = new URL(finalUrl).hostname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  } catch {
+    // keep fallback
+  }
+  return `${timestamp}_${host}`;
+}
+
+async function writeDebugArtifacts(
+  debugId: string,
+  artifacts: { staticHtml: string; renderedHtml: string | null; diagnostics: unknown },
+): Promise<void> {
+  try {
+    await fs.mkdir(DEBUG_DIR, { recursive: true });
+    await fs.writeFile(path.join(DEBUG_DIR, `${debugId}-static.html`), artifacts.staticHtml, "utf-8");
+    if (artifacts.renderedHtml !== null) {
+      await fs.writeFile(path.join(DEBUG_DIR, `${debugId}-rendered.html`), artifacts.renderedHtml, "utf-8");
+    }
+    await fs.writeFile(
+      path.join(DEBUG_DIR, `${debugId}-diagnostics.json`),
+      JSON.stringify(artifacts.diagnostics, null, 2),
+      "utf-8",
+    );
+  } catch (err) {
+    console.error("[DEBUG_EXTRACTION] Failed to write debug artifacts:", err);
+  }
 }
 
 function handleFetchError(err: unknown, res: Response) {

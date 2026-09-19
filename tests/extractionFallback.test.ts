@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractAssets, hasCredibleProductImages, NO_PRODUCT_IMAGES_WARNING } from "../src/lib/extract/index.js";
-import { extractAssetsWithFallback } from "../src/lib/extract/pipeline.js";
+import { extractAssetsWithFallback, extractAssetsWithFallbackDiagnostics } from "../src/lib/extract/pipeline.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +96,59 @@ describe("Heaven Moon failure case", () => {
 
     expect(result.images).toHaveLength(0);
     expect(result.warnings).toContain(NO_PRODUCT_IMAGES_WARNING);
+  });
+
+  it("the diagnostics-producing pipeline explains exactly why static extraction failed and confirms the render was triggered and succeeded", async () => {
+    const staticHtml = loadFixture("heaven-moon-style.html");
+    const renderedHtml = loadFixture("heaven-moon-rendered.html");
+
+    const { result, diagnostics, renderedHtml: capturedRenderedHtml } = await extractAssetsWithFallbackDiagnostics(
+      "https://heaven-moon.com/products/perfume-8842",
+      staticHtml,
+      baseUrl,
+      { renderDynamic: async () => ({ html: renderedHtml, finalUrl: baseUrl }) },
+    );
+
+    // Static pass: both candidates rejected as logo artwork, tier "none".
+    expect(diagnostics.staticPass.tierUsed).toBe("none");
+    expect(diagnostics.staticPass.hasCredibleProductImages).toBe(false);
+    expect(diagnostics.staticPass.logoUrl).toBe("https://cdn.heaven-moon.example.com/branding/logo.jpg");
+    expect(diagnostics.staticPass.candidates.every((c) => !c.accepted)).toBe(true);
+    expect(diagnostics.staticPass.candidates.some((c) => c.rejectionReasons.includes("logo-artwork-filename"))).toBe(
+      true,
+    );
+
+    // Render pass: triggered, ran, and this time found real product photos.
+    expect(diagnostics.renderPass.attempted).toBe(true);
+    expect(diagnostics.renderPass.triggered).toBe(true);
+    expect(diagnostics.renderPass.error).toBeUndefined();
+    expect(diagnostics.renderPass.hasCredibleProductImages).toBe(true);
+    expect(diagnostics.renderPass.tierUsed).toBe("structured+gallery");
+
+    expect(capturedRenderedHtml).toBe(renderedHtml);
+    expect(diagnostics.finalImageUrls).toHaveLength(3);
+    expect(result.images).toHaveLength(3);
+  });
+
+  it("the diagnostics pipeline reports the render error message when rendering throws", async () => {
+    const staticHtml = loadFixture("heaven-moon-style.html");
+
+    const { diagnostics, renderedHtml } = await extractAssetsWithFallbackDiagnostics(
+      "https://heaven-moon.com/products/perfume-8842",
+      staticHtml,
+      baseUrl,
+      {
+        renderDynamic: async () => {
+          throw new Error("Chromium executable not found");
+        },
+      },
+    );
+
+    expect(diagnostics.renderPass.triggered).toBe(true);
+    expect(diagnostics.renderPass.error).toBe("Chromium executable not found");
+    expect(renderedHtml).toBeNull();
+    expect(diagnostics.finalImageUrls).toHaveLength(0);
+    expect(diagnostics.warnings).toContain(NO_PRODUCT_IMAGES_WARNING);
   });
 });
 
