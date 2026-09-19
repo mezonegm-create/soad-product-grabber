@@ -31,7 +31,7 @@ export function extractLogoCandidates($: CheerioAPI): LogoCandidate[] {
     if (!looksLikeLogoHint(hint)) return;
     const url = $img.attr("src") || $img.attr("data-src");
     if (!url || url.startsWith("data:")) return;
-    candidates.push({ url, source: "dom-logo-img", score: 65 });
+    candidates.push({ url, source: "dom-logo-img", score: 65, confidence: "generic" });
   });
 
   $(scoped("svg")).each((_i, el) => {
@@ -43,6 +43,7 @@ export function extractLogoCandidates($: CheerioAPI): LogoCandidate[] {
       url: `inline-svg:${$svg.attr("id") ?? $svg.attr("class") ?? "logo"}`,
       source: "dom-logo-svg",
       score: 80,
+      confidence: "generic",
       isSvgMarkup: true,
       svgMarkup: markup,
     });
@@ -53,7 +54,7 @@ export function extractLogoCandidates($: CheerioAPI): LogoCandidate[] {
     const $img = $(el);
     const url = $img.attr("src") || $img.attr("data-src");
     if (!url || url.startsWith("data:")) return;
-    candidates.push({ url, source: "dom-logo-class", score: 68 });
+    candidates.push({ url, source: "dom-logo-class", score: 68, confidence: "generic" });
   });
 
   return candidates;

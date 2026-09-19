@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <title>MegaPhone Pro – TechStore</title>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "MegaPhone Pro",
+      "image": [
+        "https://cdn.techstore.example.com/megaphone-pro/hero.jpg",
+        "https://cdn.techstore.example.com/megaphone-pro/back.jpg"
+      ]
+    }
+  </script>
+</head>
+<body>
+  <header class="global-nav">
+    <a href="/" class="site-logo"><img src="https://cdn.techstore.example.com/branding/techstore-logo.svg" alt="TechStore logo" /></a>
+    <nav>
+      <img src="/icons/search_2x.png" alt="search icon" class="nav-icon" />
+      <img src="/icons/bag_2x.png" alt="shopping bag icon" class="nav-icon" />
+    </nav>
+  </header>
+
+  <main>
+    <section class="content-block hero-copy">
+      <!-- Real-world bug: this section has no "gallery"/"related"/"nav" keyword
+           in its class name at all, yet contains photos of OTHER products
+           (unrelated to the submitted MegaPhone Pro page). A flat merge of
+           every DOM image previously let these leak into productImages. -->
+      <img src="https://cdn.techstore.example.com/other-line/megabook-air.jpg" alt="MegaBook Air laptop" width="1200" height="1200" />
+      <img src="https://cdn.techstore.example.com/other-line/megapods-pro.jpg" alt="MegaPods Pro earbuds" width="1200" height="1200" />
+      <img src="https://cdn.techstore.example.com/lifestyle/person-holding-phone.jpg" alt="Person using a phone outdoors" width="1600" height="1000" />
+    </section>
+
+    <section class="you-may-also-like">
+      <img src="https://cdn.techstore.example.com/other-line/megawatch.jpg" alt="MegaWatch" width="800" height="800" />
+      <img src="https://cdn.techstore.example.com/other-line/megatab.jpg" alt="MegaTab tablet" width="800" height="800" />
+    </section>
+
+    <section class="compare-models">
+      <img src="https://cdn.techstore.example.com/other-line/megaphone-standard.jpg" alt="MegaPhone Standard" width="600" height="600" />
+      <img src="https://cdn.techstore.example.com/other-line/megaphone-mini.jpg" alt="MegaPhone Mini" width="600" height="600" />
+    </section>
+  </main>
+
+  <footer class="global-footer">
+    <img src="/badges/app-store-badge.png" alt="Download on the App Store" width="200" height="60" />
+    <img src="/badges/play-store-badge.png" alt="Get it on Google Play" width="200" height="60" />
+    <img src="/icons/facebook_2x.png" alt="Facebook" class="social-icon" />
+  </footer>
+</body>
+</html>

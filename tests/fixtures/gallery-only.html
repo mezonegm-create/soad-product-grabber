@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+  <title>Hand-Thrown Ceramic Vase</title>
+</head>
+<body>
+  <header class="header">
+    <img src="https://cdn.potteryhouse.example.com/branding/logo.png" alt="Pottery House logo" />
+  </header>
+
+  <main>
+    <!-- No JSON-LD, no OpenGraph image, no platform-specific markup: the
+         gallery container is the only signal, and it should be enough. -->
+    <div class="product-gallery">
+      <img src="https://cdn.potteryhouse.example.com/vase/angle-1.jpg" alt="Vase angle 1" width="1500" height="1500" />
+      <img src="https://cdn.potteryhouse.example.com/vase/angle-2.jpg" alt="Vase angle 2" width="1500" height="1500" />
+      <img src="https://cdn.potteryhouse.example.com/vase/angle-3.jpg" alt="Vase angle 3" width="1500" height="1500" />
+    </div>
+
+    <!-- Deliberately an ambiguous class name (no "related"/"recommend"/"nav"
+         keyword) so this is excluded by confidence-tiering, not by the
+         keyword blacklist -- proving the tiering logic itself works, not
+         just the exclusion regex. -->
+    <div class="content-block">
+      <img src="https://cdn.potteryhouse.example.com/other/bowl.jpg" alt="Ceramic bowl" width="900" height="900" />
+      <img src="https://cdn.potteryhouse.example.com/other/plate.jpg" alt="Ceramic plate" width="900" height="900" />
+    </div>
+  </main>
+</body>
+</html>

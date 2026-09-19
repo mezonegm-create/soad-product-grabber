@@ -53,7 +53,12 @@ export function extractFromShopifyProductJson($: CheerioAPI): ImageCandidate[] {
 
     for (const url of urls) {
       if (!/\.(jpe?g|png|webp|gif)/i.test(url)) continue;
-      candidates.push({ url: normalizeProtocolRelative(url), source: "shopify-json", score: 85 });
+      candidates.push({
+        url: normalizeProtocolRelative(url),
+        source: "shopify-json",
+        score: 85,
+        confidence: "structured",
+      });
     }
   });
 

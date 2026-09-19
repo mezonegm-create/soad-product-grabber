@@ -7,7 +7,17 @@ const LAZY_SRC_ATTRS = ["data-src", "data-original", "data-lazy-src", "data-lazy
 const LAZY_SRCSET_ATTRS = ["data-srcset", "data-lazy-srcset"];
 
 const GALLERY_HINT = /(product[-_ ]?(gallery|image|photo|media)|gallery[-_ ]?(image|item|thumb)|main[-_ ]?image|pdp[-_ ]?(image|gallery)|zoom)/i;
-const NAV_OR_CHROME_HINT = /(header|footer|nav|menu|cart|sidebar|breadcrumb|related|upsell|cross-sell|recommend)/i;
+
+// Generic, platform-agnostic vocabulary for sections that are never the
+// current product's own photos: site chrome (nav/header/footer), and
+// merchandising/editorial sections that link to OTHER products (related
+// items, recommendations, comparison tables, carousels, promotional
+// banners, lifestyle/editorial imagery, store-wide badges). Deliberately
+// vocabulary-based rather than tied to any one retailer's class names, so
+// it generalizes across Shopify/WooCommerce/Salla/Apple-style storefronts
+// alike instead of overfitting to a single site observed during testing.
+const NAV_OR_CHROME_HINT =
+  /(header|footer|nav|menu|\bcart\b|sidebar|breadcrumb|related|upsell|cross-sell|recommend|similar|also-like|also[-_ ]?bought|compare|comparison|carousel|slider|\bslides?\b|banner|\bpromo\b|promotion|editorial|lifestyle|storefront|store-locator|newsletter|subscribe|social[-_ ]?(share|link|icon)|app-badge|app-store|play-store|store-badge|testimonial|review-widget|trust-badge|chat-widget|cookie|consent|accessor(?:y|ies)|bundle|you[-_ ]?may[-_ ]?also|shop[-_ ]?the[-_ ]?look|more[-_ ]?to[-_ ]?explore|explore[-_ ]?more)/i;
 
 function closestClassChainMatches($: CheerioAPI, el: AnyNode, pattern: RegExp): boolean {
   let node = $(el);
@@ -46,8 +56,10 @@ export function extractFromDom($: CheerioAPI): ImageCandidate[] {
     const widthAttr = numOrUndefined($img.attr("width"));
     const heightAttr = numOrUndefined($img.attr("height"));
 
+    const confidence = inGallery ? "gallery" : "generic";
+
     if (url && !url.startsWith("data:")) {
-      candidates.push({ url, width: widthAttr, height: heightAttr, source: "img", score: baseScore });
+      candidates.push({ url, width: widthAttr, height: heightAttr, source: "img", score: baseScore, confidence });
     }
 
     for (const attr of ["srcset", ...LAZY_SRCSET_ATTRS]) {
@@ -55,7 +67,13 @@ export function extractFromDom($: CheerioAPI): ImageCandidate[] {
       if (!value) continue;
       const best = highestResolutionFromSrcset(parseSrcset(value));
       if (best) {
-        candidates.push({ url: best.url, width: best.width, source: "img-srcset", score: baseScore + 5 });
+        candidates.push({
+          url: best.url,
+          width: best.width,
+          source: "img-srcset",
+          score: baseScore + 5,
+          confidence,
+        });
       }
     }
   });
@@ -71,12 +89,20 @@ export function extractFromDom($: CheerioAPI): ImageCandidate[] {
     if (!value) return;
     const best = highestResolutionFromSrcset(parseSrcset(value));
     if (best) {
-      candidates.push({ url: best.url, width: best.width, source: "picture-source", score: baseScore });
+      candidates.push({
+        url: best.url,
+        width: best.width,
+        source: "picture-source",
+        score: baseScore,
+        confidence: inGallery ? "gallery" : "generic",
+      });
     }
   });
 
   // Anchors that wrap a gallery thumbnail and link straight to the
-  // full-resolution image (a very common lightbox/zoom pattern).
+  // full-resolution image (a very common lightbox/zoom pattern). Only
+  // trusted when the anchor sits inside a recognized gallery container --
+  // this source is never used as part of the unscoped generic fallback.
   $("a").each((_i, el) => {
     const $a = $(el);
     const href = $a.attr("href");
@@ -84,7 +110,7 @@ export function extractFromDom($: CheerioAPI): ImageCandidate[] {
     if (!$a.find("img").length) return;
     const inGallery = closestClassChainMatches($, el, GALLERY_HINT);
     if (!inGallery) return;
-    candidates.push({ url: href, source: "gallery-anchor", score: 82 });
+    candidates.push({ url: href, source: "gallery-anchor", score: 82, confidence: "gallery" });
   });
 
   // CSS background-image, restricted to elements that are clearly part of a
@@ -96,7 +122,7 @@ export function extractFromDom($: CheerioAPI): ImageCandidate[] {
     const style = $el.attr("style") ?? "";
     const match = style.match(/background-image\s*:\s*url\((['"]?)(.*?)\1\)/i);
     if (match?.[2]) {
-      candidates.push({ url: match[2], source: "css-background", score: 70 });
+      candidates.push({ url: match[2], source: "css-background", score: 70, confidence: "gallery" });
     }
   });
 

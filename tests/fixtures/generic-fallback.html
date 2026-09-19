@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <title>Handmade Leather Belt</title>
+</head>
+<body>
+  <div class="header">
+    <img src="/icons/menu_2x.png" alt="menu icon" width="24" height="24" />
+  </div>
+
+  <!-- No JSON-LD, no OpenGraph image, no recognizable gallery container:
+       this is the "simple site" case the generic DOM fallback must still
+       handle. -->
+  <div class="page-content">
+    <img src="https://cdn.leathercraft.example.com/belt-main.jpg" alt="Handmade leather belt" width="1000" height="1000" />
+
+    <!-- Named with the "_2x" retina-density convention but has no HTML
+         width/height attribute, and is genuinely a large photo -- the old
+         buggy regex would misread this filename's "2" as a 2px width hint
+         and mislabel it, even though it was never excluded outright. -->
+    <img src="https://cdn.leathercraft.example.com/belt-buckle-detail_2x.jpg" alt="Belt buckle detail" />
+
+    <!-- A genuinely tiny icon with explicit real dimensions: this must
+         still be rejected. -->
+    <img src="https://cdn.leathercraft.example.com/swatch-icon.png" alt="color swatch" width="16" height="16" />
+  </div>
+</body>
+</html>

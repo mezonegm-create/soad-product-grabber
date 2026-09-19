@@ -4,13 +4,21 @@ export interface UrlDimensionHint {
 }
 
 // Shopify (and many other CDNs built on similar conventions) encode a
-// resize into the filename: name_800x800.jpg, name_800x.jpg, name_x800.jpg,
-// name@2x.jpg. WordPress/WooCommerce encodes generated thumbnail sizes as
+// resize into the filename: name_800x800.jpg, name_800x.jpg, name_x800.jpg.
+// WordPress/WooCommerce encodes generated thumbnail sizes as
 // name-800x800.jpg. Stripping the suffix recovers the original asset URL.
-const SHOPIFY_SIZE_SUFFIX = /_(\d{1,5})x(\d{1,5})?(?=\.[a-zA-Z]+$)/;
-const SHOPIFY_SIZE_SUFFIX_REVERSE = /_x(\d{1,5})(?=\.[a-zA-Z]+$)/;
-const WORDPRESS_SIZE_SUFFIX = /-(\d{1,5})x(\d{1,5})(?=\.[a-zA-Z]+$)/;
-const RETINA_SUFFIX = /@(\d)x(?=\.[a-zA-Z]+$)/;
+//
+// Separately, `name@2x.jpg` / `name_2x.jpg` / `name_3x.jpg` is the common
+// *pixel-density* (retina) naming convention: the single digit there is a
+// density multiplier (1x-4x), NOT a pixel width. The width-suffix pattern
+// below requires >= 2 digits specifically so it cannot match that
+// single-digit density form -- conflating the two previously produced
+// bogus "2px wide" dimension hints for perfectly normal icons/assets named
+// like "search_2x.png".
+const SHOPIFY_SIZE_SUFFIX = /_(\d{2,5})x(\d{2,5})?(?=\.[a-zA-Z]+$)/;
+const SHOPIFY_SIZE_SUFFIX_REVERSE = /_x(\d{2,5})(?=\.[a-zA-Z]+$)/;
+const WORDPRESS_SIZE_SUFFIX = /-(\d{2,5})x(\d{2,5})(?=\.[a-zA-Z]+$)/;
+const RETINA_SUFFIX = /[@_](\d)x(?=\.[a-zA-Z]+$)/;
 
 const SIZE_QUERY_PARAMS = ["width", "height", "w", "h", "size", "resize", "quality", "scale"];
 

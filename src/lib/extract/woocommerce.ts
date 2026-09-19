@@ -17,14 +17,23 @@ export function extractFromWooCommerce($: CheerioAPI): ImageCandidate[] {
     .each((_i, el) => {
       const $el = $(el);
       const anchorHref = $el.find("a").attr("href");
-      if (anchorHref) candidates.push({ url: anchorHref, source: "woocommerce-gallery-link", score: 88 });
+      if (anchorHref) {
+        candidates.push({ url: anchorHref, source: "woocommerce-gallery-link", score: 88, confidence: "structured" });
+      }
 
       const img = $el.find("img").first();
       const dataLarge = img.attr("data-large_image");
       if (dataLarge) {
         const width = numOrUndefined(img.attr("data-large_image_width"));
         const height = numOrUndefined(img.attr("data-large_image_height"));
-        candidates.push({ url: dataLarge, width, height, source: "woocommerce-data-large", score: 90 });
+        candidates.push({
+          url: dataLarge,
+          width,
+          height,
+          source: "woocommerce-data-large",
+          score: 90,
+          confidence: "structured",
+        });
       }
     });
 
@@ -34,7 +43,7 @@ export function extractFromWooCommerce($: CheerioAPI): ImageCandidate[] {
     if (!url) return;
     const width = numOrUndefined($el.attr("data-large_image_width"));
     const height = numOrUndefined($el.attr("data-large_image_height"));
-    candidates.push({ url, width, height, source: "woocommerce-data-large", score: 90 });
+    candidates.push({ url, width, height, source: "woocommerce-data-large", score: 90, confidence: "structured" });
   });
 
   return candidates;

@@ -52,7 +52,7 @@ export function extractFromJsonLd($: CheerioAPI): ImageCandidate[] {
       if (!isProductNode(node)) continue;
       const urls = collectImageUrls(node.image);
       for (const url of urls) {
-        candidates.push({ url, source: "jsonld", score: 90 });
+        candidates.push({ url, source: "jsonld", score: 90, confidence: "structured" });
       }
     }
   });
@@ -83,7 +83,7 @@ export function extractLogoFromJsonLd($: CheerioAPI): ImageCandidate[] {
       if (!/organization|brand/i.test(typeStr)) continue;
       const urls = collectImageUrls(node.logo);
       for (const url of urls) {
-        candidates.push({ url, source: "jsonld-logo", score: 95 });
+        candidates.push({ url, source: "jsonld-logo", score: 95, confidence: "structured" });
       }
     }
   });
